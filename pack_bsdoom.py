@@ -2,18 +2,19 @@
 pack_bsdoom.py
 
 Encodes libdoomgeneric.so and a DOOM WAD file as base-85 and appends them
-to bsdoom.py, replacing the two placeholder variables at the bottom of the
-file.  The result is written to a new file so the original is never modified
-in place.
+to bsdoom_src.py, replacing the two placeholder variables at the bottom of
+the file.  The result is written to a new file so the source is never
+modified in place.
 
 Usage:
-    python3 pack_bsdoom.py <libdoomgeneric.so> <DOOM1.WAD> [bsdoom.py] [output.py]
+    python3 pack_bsdoom.py <libdoomgeneric.so> <DOOM1.WAD> [src.py] [out.py]
 
 Arguments:
     libdoomgeneric.so   Path to the compiled shared library.
     DOOM1.WAD           Path to the WAD file (DOOM1.WAD, doom.wad, etc.).
-    bsdoom.py           Source plugin file to pack into. Defaults to bsdoom.py.
-    output.py           Destination file. Defaults to bsdoom_packed.py.
+    src.py              Source file to pack. Defaults to bsdoom_src.py.
+    out.py              Output file. Defaults to src.py with _src removed,
+                        e.g. bsdoom_src.py -> bsdoom.py.
 """
 
 import base64
@@ -79,7 +80,7 @@ if __name__ == "__main__":
 
     so_path  = args[0]
     wad_path = args[1]
-    src_path = args[2] if len(args) > 2 else "bsdoom.py"
-    dst_path = args[3] if len(args) > 3 else "bsdoom_packed.py"
+    src_path = args[2] if len(args) > 2 else "bsdoom_src.py"
+    dst_path = args[3] if len(args) > 3 else os.path.basename(src_path).replace("_src", "")
 
     pack(so_path, wad_path, src_path, dst_path)
