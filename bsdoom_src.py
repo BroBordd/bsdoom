@@ -2,21 +2,23 @@
 # Telegram >> @BroBordd
 
 import os
-import base64
-import shutil
-import uuid
 import ctypes
-import atexit
-import traceback
-import faulthandler
-import datetime
-import zipfile
-import babase
 import bauiv1 as bui
+
+from uuid import uuid4
+from shutil import rmtree
+from zipfile import ZipFile
+from base64 import b85decode
+from threading import Thread
+from datetime import datetime
+from traceback import format_exc
 from babase._appmode import AppMode
+from atexit import register as reg_trap
+from bascenev1 import set_internal_music
+from faulthandler import enable as fhandler
+from _baclassic import classic_app_mode_activate
 from babase._appintent import AppIntentExec, AppIntentDefault
 from _babase import empty_app_mode_handle_app_intent_exec, empty_app_mode_handle_app_intent_default
-from _baclassic import classic_app_mode_activate
 
 
 # ---------------------------------------------------------------------------
@@ -26,13 +28,13 @@ from _baclassic import classic_app_mode_activate
 try:
     _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 except NameError:
-    _SCRIPT_DIR = babase.app.env.python_directory_user
+    _SCRIPT_DIR = bui.app.env.python_directory_user
 
 LOG_PATH  = os.path.join(_SCRIPT_DIR, "bsdoom.log")
 _log_file = open(LOG_PATH, "a")
-_log_file.write(f"\n\nBSDoom Boot: {datetime.datetime.now()}\n")
+_log_file.write(f"\n\nBSDoom Boot: {datetime.now()}\n")
 _log_file.flush()
-faulthandler.enable(file=_log_file, all_threads=True)
+fhandler(file=_log_file, all_threads=True)
 
 
 def log(msg: str) -> None:
@@ -63,18 +65,23 @@ class Const:
     WAD_NAME   = "DOOM1.WAD"
     DIR_PREFIX = ".bsdoom_"
 
+    # Expanded Key Map (Arrays to support multiple simultaneous keys like Alt+Left)
     KEY_MAP = {
-        "UP":     0xAD,
-        "DOWN":   0xAF,
-        "LEFT":   0xAC,
-        "RIGHT":  0xAE,
-        "ENTER":  13,
-        "ESCAPE": 27,
-        "USE":    32,
-        "FIRE":   0x9D,
+        "UP":        [0xAD],  # Up Arrow
+        "DOWN":      [0xAF],  # Down Arrow
+        "TURN_L":    [0xAC],  # Left Arrow
+        "TURN_R":    [0xAE],  # Right Arrow
+        "STRAFE_L":  [184, 0xAC], # ALT (184) + LEFT (0xAC)
+        "STRAFE_R":  [184, 0xAE], # ALT (184) + RIGHT (0xAE)
+        "ENTER":     [13],    # Enter
+        "ESCAPE":    [27],    # Esc
+        "USE":       [32],    # Space
+        "FIRE":      [157, 29],   # Right Ctrl (157) & Left Ctrl (29)
+        "MAP":       [9],     # Tab
+        "RUN":       [182, 54],   # Right Shift (182) & Left Shift (54)
     }
 
-    BTN_RELEASE_DELAY = 0.15   # seconds before synthesising a key-release event
+    BTN_RELEASE_DELAY = 0.35   # seconds before synthesising a key-release event
     TICK_INTERVAL     = 0.028  # seconds between engine ticks (~35 Hz)
 
     OVERLAY_HISTORY = 60
@@ -91,26 +98,38 @@ class Const:
 
 
 # ---------------------------------------------------------------------------
-# Asset extraction & Sound Cleanup
+# Asset Cleanup & pure functions
 # ---------------------------------------------------------------------------
 
-def _get_audio_dir() -> str:
-    """Returns the absolute path to ba_data/audio for injecting DOOM sounds."""
-    return os.path.abspath(os.path.join(babase.app.env.python_directory_user, os.pardir, "audio"))
+def _get_audio_dir(app_py: str) -> str:
+    """Returns the absolute path to the game's internal ba_data/sounds folder."""
+    try:
+        ba_data = os.path.abspath(os.path.join(app_py, os.pardir))
+        
+        sounds_dir = os.path.join(ba_data, "sounds")
+        if os.path.exists(sounds_dir):
+            return sounds_dir
+            
+        audio_dir = os.path.join(ba_data, "audio")
+        if os.path.exists(audio_dir):
+            return audio_dir
+            
+        return sounds_dir
+    except Exception:
+        return os.path.abspath(os.path.join(app_py, "sounds"))
 
 
 def _sweep_stale_dirs(parent: str) -> None:
     try:
         for entry in os.listdir(parent):
             if entry.startswith(Const.DIR_PREFIX):
-                shutil.rmtree(os.path.join(parent, entry), ignore_errors=True)
+                rmtree(os.path.join(parent, entry), ignore_errors=True)
     except Exception:
         pass
 
 
-def _sweep_audio_dir() -> None:
+def _sweep_audio_dir(audio_dir: str) -> None:
     """Clears out any .ogg files injected by previous BSDoom runs."""
-    audio_dir = _get_audio_dir()
     try:
         if os.path.exists(audio_dir):
             for entry in os.listdir(audio_dir):
@@ -120,12 +139,11 @@ def _sweep_audio_dir() -> None:
         pass
 
 
-def _locate_on_disk() -> tuple[str, str] | None:
+def _locate_on_disk(app_py: str, user_dir: str) -> tuple[str, str] | None:
     try:
-        app_py = os.path.abspath(bui.app.env.python_directory_app)
-        base   = os.path.abspath(os.path.join(app_py, os.pardir))
+        base = os.path.abspath(os.path.join(app_py, os.pardir))
     except Exception:
-        base = os.path.abspath(babase.app.env.python_directory_user)
+        base = os.path.abspath(user_dir)
 
     so_path = os.path.join(base, Const.SO_NAME)
     if not os.path.exists(so_path):
@@ -136,53 +154,6 @@ def _locate_on_disk() -> tuple[str, str] | None:
         if os.path.exists(wad_path):
             return os.path.abspath(so_path), os.path.abspath(wad_path)
     return None
-
-
-def _extract_assets() -> tuple[str, str]:
-    if _ASSET_SO  = None
-        log("[Assets] Embedded blobs found, extracting...")
-        parent = os.path.abspath(babase.app.env.python_directory_user)
-        _sweep_stale_dirs(parent)
-
-        extract_dir = os.path.join(parent, f"{Const.DIR_PREFIX}{uuid.uuid4().hex}")
-        os.makedirs(extract_dir, exist_ok=True)
-        atexit.register(shutil.rmtree, extract_dir, True)
-
-        so_path  = os.path.join(extract_dir, Const.SO_NAME)
-        wad_path = os.path.join(extract_dir, Const.WAD_NAME)
-
-        with open(so_path, "wb") as fh:
-            fh.write(base64.b85decode(_ASSET_SO  = None
-        with open(wad_path, "wb") as fh:
-            fh.write(base64.b85decode(_ASSET_WAD = None
-        os.chmod(so_path, 0o755)
-
-        # Extract sounds if packed
-        if _ASSET_SO  = None
-            log("[Assets] Sounds ZIP found, extracting to ba_data/audio...")
-            _sweep_audio_dir()
-            audio_dir = _get_audio_dir()
-            os.makedirs(audio_dir, exist_ok=True)
-            
-            zip_path = os.path.join(extract_dir, "sounds.zip")
-            with open(zip_path, "wb") as fh:
-                fh.write(base64.b85decode(_ASSET_SO  = None
-            
-            with zipfile.ZipFile(zip_path, 'r') as z:
-                z.extractall(audio_dir)
-            
-            atexit.register(_sweep_audio_dir)
-            log(f"[Assets] Sounds injected to {audio_dir}")
-
-        log(f"[Assets] Engine extracted to {extract_dir}")
-        return so_path, wad_path
-
-    log("[Assets] No embedded blobs, falling back to disk search...")
-    result = _locate_on_disk()
-    if result is None:
-        raise FileNotFoundError("Could not find DOOM binaries. Run pack_bsdoom.py.")
-    return result
-
 
 def _make_pixel_array_type(w: int, h: int):
     return ctypes.c_uint32 * (w * h)
@@ -225,14 +196,15 @@ class DoomAppMode(AppMode):
             empty_app_mode_handle_app_intent_default()
 
     def on_activate(self) -> None:
-        log("[AppMode] Activated.")
+        log("[AppMode] Activated."
         classic_app_mode_activate()
+        set_internal_music(None)
 
         self._lib            = None
         self._screenbuf      = None
         self._frame_ready    = None
         self._c_argv         = None
-        self._argv_bytes     = None
+        self._c_args_buffers = None
         self._timer          = None
         self._res_timer      = None
         self._release_timers = {}
@@ -249,7 +221,7 @@ class DoomAppMode(AppMode):
         self._overlay_enabled = False
         self._frame_count     = 0
         self._tick_history    = []
-        self._last_fps_sample = datetime.datetime.now()
+        self._last_fps_sample = datetime.now()
         self._overlay_timer   = None
         self._ov_container    = None
         self._ov_bars         = []
@@ -260,13 +232,15 @@ class DoomAppMode(AppMode):
 
         self._adv_visible   = False
         self._adv_container = None
+        
+        self._load_root = None
 
         try:
             sw, sh = bui.get_virtual_screen_size()
             self.root = bui.containerwidget(size=(sw, sh), background=False, scale=1.0)
             self._build_main_menu(sw, sh)
         except Exception:
-            log(f"[AppMode] Fatal error during activation:\n{traceback.format_exc()}")
+            log(f"[AppMode] Fatal error during activation:\n{format_exc()}")
             bui.screenmessage("BSDoom: UI crash. See bsdoom.log.", color=(1, 0, 0))
 
 
@@ -278,9 +252,12 @@ class DoomAppMode(AppMode):
         bui.imagewidget(parent=self.root, position=(0, sh - 6), size=(sw, 6), texture=tex_w, color=Const.COLOR_RED)
 
         bui.textwidget(parent=self.root, position=(sw / 2, sh - 80), size=(0, 0), text="DOOM", big=True, scale=3.2, color=Const.COLOR_RED, h_align="center", v_align="center", shadow=1.4, flatness=0.0)
-        bui.textwidget(parent=self.root, position=(sw / 2, sh - 142), size=(0, 0), text="for Ballistica BombSquad", scale=0.72, color=Const.COLOR_DIM, h_align="center", v_align="center")
+        
+        # Diff adjustment applied here
+        bui.textwidget(parent=self.root, position=(sw / 2, sh - 137), size=(0, 0), text="for Ballistica BombSquad", scale=0.72, color=Const.COLOR_DIM, h_align="center", v_align="center")
 
-        bui.imagewidget(parent=self.root, position=(sw / 2 - 160, sh - 180), size=(320, 1), texture=tex_w, color=Const.COLOR_LIGHT, opacity=0.4)
+        # Diff adjustment applied here
+        bui.imagewidget(parent=self.root, position=(sw / 2 - 160, sh - 152), size=(320, 1), texture=tex_w, color=Const.COLOR_LIGHT, opacity=0.4)
 
         panel_w, panel_h = 360, 190
         panel_x = sw / 2 - panel_w / 2
@@ -386,13 +363,15 @@ class DoomAppMode(AppMode):
 
         row_y -= gap
 
-        def _scale_lbl(y): return bui.textwidget(parent=self._adv_container, position=(adv_w - 180, y + 17), size=(0, 0), text=self._opt_scale_mode.upper(), scale=0.58, color=Const.COLOR_ACCENT, h_align="center", v_align="center")
+        # Diff adjustments applied here
+        def _scale_lbl(y): return bui.textwidget(parent=self._adv_container, position=(adv_w - 160, y + 17), size=(0, 0), text=self._opt_scale_mode.upper(), scale=0.58, color=Const.COLOR_ACCENT, h_align="center", v_align="center")
         def _scale_btn(y): return bui.buttonwidget(parent=self._adv_container, position=(adv_w - 110, y), size=(88, 34), label="Toggle", color=Const.COLOR_LIGHT, textcolor=Const.COLOR_TEXT, texture=tex_w, enable_sound=False, on_activate_call=self._toggle_scale_mode)
         self._scale_mode_lbl, _ = _row(row_y, "Scale mode", _scale_lbl, _scale_btn)
 
         row_y -= gap
 
-        def _ov_lbl(y): return bui.textwidget(parent=self._adv_container, position=(adv_w - 180, y + 17), size=(0, 0), text="ON" if self._opt_show_overlays else "OFF", scale=0.58, color=Const.COLOR_GREEN if self._opt_show_overlays else Const.COLOR_DIM, h_align="center", v_align="center")
+        # Diff adjustments applied here
+        def _ov_lbl(y): return bui.textwidget(parent=self._adv_container, position=(adv_w - 160, y + 17), size=(0, 0), text="ON" if self._opt_show_overlays else "OFF", scale=0.58, color=Const.COLOR_GREEN if self._opt_show_overlays else Const.COLOR_DIM, h_align="center", v_align="center")
         def _ov_btn(y): return bui.buttonwidget(parent=self._adv_container, position=(adv_w - 110, y), size=(88, 34), label="Toggle", color=Const.COLOR_LIGHT, textcolor=Const.COLOR_TEXT, texture=tex_w, enable_sound=False, on_activate_call=self._toggle_overlays_opt)
         self._overlay_lbl, _ = _row(row_y, "Live overlays  (FPS, tick ms, bar graph)", _ov_lbl, _ov_btn)
 
@@ -440,15 +419,137 @@ class DoomAppMode(AppMode):
         if self.root.exists(): self.root.delete()
 
         sw, sh = bui.get_virtual_screen_size()
+        
+        # 1. Build the game rendering layer
         self.root = bui.containerwidget(size=(sw, sh), background=False, scale=1.0)
         self._build_game_ui(sw, sh)
 
-        if self._start_engine():
+        # 2. Build the blocking loading layer on top
+        self._build_loading_overlay(sw, sh)
+
+        # Cache paths before we thread, just to be thread-safe
+        app_py = os.path.abspath(bui.app.env.python_directory_app)
+        usr_dir = os.path.abspath(bui.app.env.python_directory_user)
+
+        # 3. Start extraction sequence in the background
+        Thread(target=self._extraction_thread_main, args=(app_py, usr_dir), daemon=True).start()
+
+    def _build_loading_overlay(self, sw: float, sh: float) -> None:
+        tex_w = bui.gettexture("white")
+        self._load_root = bui.containerwidget(parent=self.root, size=(sw, sh), background=False)
+        
+        # Dim background covering entire screen
+        bui.imagewidget(parent=self._load_root, position=(0, 0), size=(sw, sh), texture=tex_w, color=(0, 0, 0), opacity=0.45)
+        
+        panel_w, panel_h = 440, 170
+        px, py = sw / 2 - panel_w / 2, sh / 2 - panel_h / 2
+        
+        # Box background
+        bui.imagewidget(parent=self._load_root, position=(px, py), size=(panel_w, panel_h), texture=tex_w, color=Const.COLOR_MID, opacity=0.95)
+        bui.imagewidget(parent=self._load_root, position=(px, py + panel_h - 4), size=(panel_w, 4), texture=tex_w, color=Const.COLOR_ACCENT)
+        
+        # Texts
+        bui.textwidget(parent=self._load_root, position=(px + panel_w / 2, py + panel_h - 35), size=(0, 0), text="EXTRACTING ASSETS", scale=0.7, color=Const.COLOR_ACCENT, h_align="center", v_align="center")
+        self._load_log = bui.textwidget(parent=self._load_root, position=(px + panel_w / 2, py + 80), size=(0, 0), text="Preparing...", scale=0.55, color=Const.COLOR_TEXT, h_align="center", v_align="center")
+        
+        # Progress Bar base
+        bar_w, bar_h = 380, 14
+        bx, by = px + (panel_w - bar_w) / 2, py + 35
+        bui.imagewidget(parent=self._load_root, position=(bx, by), size=(bar_w, bar_h), texture=tex_w, color=Const.COLOR_DARK)
+        
+        # Progress bar fill
+        self._load_bar = bui.imagewidget(parent=self._load_root, position=(bx, by), size=(0, bar_h), texture=tex_w, color=Const.COLOR_GREEN)
+        self._load_bar_w = bar_w
+
+    def _update_loading_ui(self, pct: float, msg: str) -> None:
+        if not self._load_root or not self._load_root.exists(): return
+        bui.textwidget(edit=self._load_log, text=msg)
+        bui.imagewidget(edit=self._load_bar, size=(self._load_bar_w * max(0.0, min(1.0, pct)), 14))
+        log(f"[Extract] {msg}")
+
+    def _extraction_thread_main(self, app_py: str, user_dir: str) -> None:
+        """Runs in background thread to unblock UI during massive base64 decodes."""
+        def set_prog(p, m):
+            bui.pushcall(lambda pct=p, msg=m: self._update_loading_ui(pct, msg), from_other_thread=True)
+            
+        try:
+            if _ASSET_SO is None:
+                set_prog(0.5, "Searching disk for DOOM assets...")
+                res = _locate_on_disk(app_py, user_dir)
+                if not res:
+                    raise FileNotFoundError("Could not find DOOM binaries. Run pack_bsdoom.py.")
+                set_prog(1.0, "Ready.")
+                bui.pushcall(lambda s=res[0], w=res[1]: self._finalize_launch(s, w), from_other_thread=True)
+                return
+
+            set_prog(0.1, "Cleaning up old data...")
+            try:
+                parent = os.path.abspath(os.path.join(app_py, os.pardir))
+            except Exception:
+                parent = user_dir
+
+            _sweep_stale_dirs(parent)
+            if user_dir != parent:
+                _sweep_stale_dirs(user_dir)
+
+            extract_dir = os.path.join(parent, f"{Const.DIR_PREFIX}{uuid4().hex}")
+            os.makedirs(extract_dir, exist_ok=True)
+            reg_trap(rmtree, extract_dir, True)
+
+            so_path  = os.path.join(extract_dir, Const.SO_NAME)
+            wad_path = os.path.join(extract_dir, Const.WAD_NAME)
+
+            set_prog(0.2, "Decoding engine binary...")
+            with open(so_path, "wb") as fh:
+                fh.write(b85decode(_ASSET_SO))
+            os.chmod(so_path, 0o755)
+
+            set_prog(0.4, "Decoding DOOM1.WAD... (This takes a moment)")
+            with open(wad_path, "wb") as fh:
+                fh.write(b85decode(_ASSET_WAD))
+
+            if _ASSET_SOUNDS is not None:
+                set_prog(0.7, "Extracting audio assets...")
+                audio_dir = _get_audio_dir(app_py)
+                _sweep_audio_dir(audio_dir)
+                os.makedirs(audio_dir, exist_ok=True)
+
+                zip_path = os.path.join(extract_dir, "sounds.zip")
+                with open(zip_path, "wb") as fh:
+                    fh.write(b85decode(_ASSET_SOUNDS))
+
+                set_prog(0.85, "Installing audio assets...")
+                with ZipFile(zip_path, 'r') as z:
+                    z.extractall(audio_dir)
+
+                reg_trap(_sweep_audio_dir, audio_dir)
+
+            set_prog(1.0, "Booting DOOM Engine...")
+            bui.pushcall(lambda s=so_path, w=wad_path: self._finalize_launch(s, w), from_other_thread=True)
+
+        except Exception as e:
+            trace = format_exc()
+            bui.pushcall(lambda m=str(e), t=trace: self._on_extraction_failed(m, t), from_other_thread=True)
+
+    def _on_extraction_failed(self, err_msg: str, trace: str) -> None:
+        log(f"[Engine] Extraction failed:\n{trace}")
+        bui.screenmessage(f"BSDoom Init Error: {err_msg}", color=(1, 0, 0))
+        if self._load_root and self._load_root.exists():
+            self._load_root.delete()
+
+    def _finalize_launch(self, so_path: str, wad_path: str) -> None:
+        """Called back onto the main thread once extraction is done."""
+        if self._load_root and self._load_root.exists():
+            self._load_root.delete()
+        self._load_root = None
+        
+        if self._start_engine(so_path, wad_path):
             interval = 1.0 / self._opt_tick_hz
-            self._timer = babase.AppTimer(interval, self._tick, repeat=True)
+            self._timer = bui.AppTimer(interval, self._tick, repeat=True)
             if self._overlay_enabled:
+                sw, sh = bui.get_virtual_screen_size()
                 self._build_overlay(sw, sh)
-                self._overlay_timer = babase.AppTimer(0.25, self._update_overlay, repeat=True)
+                self._overlay_timer = bui.AppTimer(0.25, self._update_overlay, repeat=True)
         else:
             bui.screenmessage("BSDoom: Engine failed to start.", color=(1, 0, 0))
 
@@ -473,20 +574,16 @@ class DoomAppMode(AppMode):
 
         self._build_buttons(sw, sh)
 
-    def _start_engine(self) -> bool:
-        try: so_path, wad_path = _extract_assets()
-        except Exception as e:
-            log(f"[Engine] Asset extraction failed:\n{traceback.format_exc()}")
-            bui.screenmessage(f"BSDoom Init Error: {e}", color=(1, 0, 0))
-            return False
-
+    def _start_engine(self, so_path: str, wad_path: str) -> bool:
         try:
             lib = ctypes.CDLL(so_path)
             lib.doomgeneric_Create.argtypes = [ctypes.c_int, ctypes.POINTER(ctypes.c_char_p)]
             lib.doomgeneric_Create.restype = None
             lib.doomgeneric_Tick.argtypes  = []
             lib.doomgeneric_Tick.restype   = None
-            lib.bs_add_key.argtypes        = [ctypes.c_ubyte, ctypes.c_int]
+            
+            # Using strict integers ensures safe cross-platform calling convention for ARM64
+            lib.bs_add_key.argtypes        = [ctypes.c_int, ctypes.c_int]
             lib.bs_add_key.restype         = None
 
             # Setup the python sound callback struct
@@ -499,12 +596,24 @@ class DoomAppMode(AppMode):
             self._frame_ready = ctypes.c_int.in_dll(lib, "bs_frame_ready")
             self._lib = lib
 
-            self._argv_bytes = [b"doom", b"-iwad", wad_path.encode(), b"-nosound", b"-nomusic"]
-            argc = len(self._argv_bytes)
-            self._c_argv = (ctypes.c_char_p * (argc + 1))(*self._argv_bytes, None)
+            # Ensure we chdir to the exact extraction folder so DOOM writes logs/cfgs there safely
+            extract_dir = os.path.dirname(wad_path)
+            
+            # Since we chdir, DOOM only needs the local WAD filename, avoiding path resolution crashes!
+            # Use ctypes string buffers so C code modifying strings doesn't cause a SegFault
+            args = [b"doom", b"-iwad", Const.WAD_NAME.encode()]
+            self._c_args_buffers = [ctypes.create_string_buffer(a) for a in args]
+            argc = len(self._c_args_buffers)
+            
+            c_char_p_array = (ctypes.c_char_p * (argc + 1))()
+            for i, buf in enumerate(self._c_args_buffers):
+                c_char_p_array[i] = ctypes.cast(buf, ctypes.c_char_p)
+            c_char_p_array[argc] = None
+            
+            self._c_argv = c_char_p_array
 
             prev_cwd = os.getcwd()
-            os.chdir(os.path.dirname(wad_path))
+            os.chdir(extract_dir)
             lib.doomgeneric_Create(argc, self._c_argv)
             os.chdir(prev_cwd)
 
@@ -512,7 +621,7 @@ class DoomAppMode(AppMode):
             if self._screenbuf is None: return False
             return True
         except Exception:
-            log(f"[Engine] Fatal error during initialisation:\n{traceback.format_exc()}")
+            log(f"[Engine] Fatal error during initialisation:\n{format_exc()}")
             bui.screenmessage("BSDoom engine fatal. See bsdoom.log.", color=(1, 0, 0))
             return False
 
@@ -521,43 +630,71 @@ class DoomAppMode(AppMode):
         if not name_bytes:
             return
         try:
-            # name_bytes is something like b'pistol' or b'shotgn'
             name = name_bytes.decode('utf-8').lower()
-            # Play the sound using BombSquad's native engine!
-            # It expects the sound to be in ba_data/audio/bsdoom_ds<name>.ogg
             bui.getsound(f"bsdoom_ds{name}").play()
-        except Exception as e:
-            # Swallow safely, don't want to crash the loop
+        except Exception:
             pass
 
     def _on_input(self, key: str, action: str) -> None:
         if not self._lib: return
-        doom_key = Const.KEY_MAP.get(key, 0)
-        if doom_key: self._lib.bs_add_key(doom_key, 1 if action == "press" else 0)
+        doom_keys = Const.KEY_MAP.get(key, [])
+        state = 1 if action == "press" else 0
+        for dk in doom_keys:
+            self._lib.bs_add_key(dk, state)
 
     def _btn(self, parent, pos: tuple, size: tuple, label: str, key: str, color: tuple = (0.25, 0.25, 0.25), repeat: bool = False) -> None:
         def _tap():
             self._on_input(key, "press")
-            self._release_timers[key] = None
-            def _release(): self._on_input(key, "release")
-            self._release_timers[key] = babase.AppTimer(Const.BTN_RELEASE_DELAY, _release)
+            if key in self._release_timers and self._release_timers[key] is not None:
+                self._release_timers[key] = None  # Safely cancel previous timer
+            
+            def _release(): 
+                self._on_input(key, "release")
+                self._release_timers[key] = None
+                
+            self._release_timers[key] = bui.AppTimer(Const.BTN_RELEASE_DELAY, _release)
 
         bui.buttonwidget(parent=parent, position=pos, size=size, label=label, color=color, textcolor=(1, 1, 1), texture=bui.gettexture("white"), enable_sound=False, repeat=repeat, on_activate_call=_tap)
 
     def _build_buttons(self, sw: float, sh: float) -> None:
-        bs, gap, margin = 80, 8, 24
+        bs, gap, margin = 70, 8, 24
+        
+        col_move = (0.15, 0.25, 0.35)  # Blue tint for movement
+        col_aim  = (0.35, 0.20, 0.15)  # Red tint for aiming
 
-        dpad = bui.containerwidget(parent=self.root, background=False, size=(bs * 3 + gap * 2, bs * 3 + gap * 2), position=(margin, margin))
-        self._btn(dpad, (bs + gap, (bs + gap) * 2), (bs, bs), "Up",    "UP",    repeat=True)
-        self._btn(dpad, (bs + gap, 0),               (bs, bs), "Down",  "DOWN",  repeat=True)
-        self._btn(dpad, (0,        bs + gap),        (bs, bs), "Left",  "LEFT",  repeat=True)
-        self._btn(dpad, ((bs+gap)*2, bs + gap),      (bs, bs), "Right", "RIGHT", repeat=True)
+        # --- LEFT STICK (Movement & Strafe) ---
+        dpad_w = bs * 3 + gap * 2
+        dpad = bui.containerwidget(parent=self.root, background=False, size=(dpad_w, dpad_w), position=(margin, margin))
+        self._btn(dpad, (bs + gap, (bs + gap) * 2), (bs, bs), "Fwd",   "UP",       col_move, repeat=True)
+        self._btn(dpad, (bs + gap, 0),              (bs, bs), "Back",  "DOWN",     col_move, repeat=True)
+        self._btn(dpad, (0,        bs + gap),       (bs, bs), "< Str", "STRAFE_L", col_move, repeat=True)
+        self._btn(dpad, ((bs+gap)*2, bs + gap),     (bs, bs), "Str >", "STRAFE_R", col_move, repeat=True)
 
-        act = bui.containerwidget(parent=self.root, background=False, size=(bs, bs * 4 + gap * 3), position=(sw - margin - bs, margin))
-        self._btn(act, (0, (bs+gap)*3), (bs, bs), "Esc",   "ESCAPE", (0.25, 0.25, 0.25))
-        self._btn(act, (0, (bs+gap)*2), (bs, bs), "Enter", "ENTER",  (0.15, 0.15, 0.50))
-        self._btn(act, (0, (bs+gap)*1), (bs, bs), "Use",   "USE",    (0.10, 0.40, 0.10))
-        self._btn(act, (0,          0), (bs, bs), "Fire",  "FIRE",   (0.50, 0.10, 0.10), repeat=True)
+        # --- RIGHT STICK (Aiming & Actions) ---
+        rpad_x = sw - margin - dpad_w
+        rpad = bui.containerwidget(parent=self.root, background=False, size=(dpad_w, dpad_w), position=(rpad_x, margin))
+        self._btn(rpad, (bs + gap, (bs + gap) * 2), (bs, bs), "Use",   "USE",    (0.10, 0.50, 0.20), repeat=False)
+        self._btn(rpad, (bs + gap, 0),              (bs, bs), "FIRE",  "FIRE",   (0.70, 0.10, 0.10), repeat=True)
+        self._btn(rpad, (0,        bs + gap),       (bs, bs), "< Aim", "TURN_L", col_aim, repeat=True)
+        self._btn(rpad, ((bs+gap)*2, bs + gap),     (bs, bs), "Aim >", "TURN_R", col_aim, repeat=True)
+
+        # --- TOP LEFT (Map & Run) ---
+        left_y = sh - margin - bs
+        if self._overlay_enabled:
+            # Diagnostics overlay is at Y = sh - 178, so we bump the Run button down completely underneath it
+            left_y = sh - 178 - bs - 10
+
+        util_l = bui.containerwidget(parent=self.root, background=False, size=(bs * 2 + gap, bs), position=(margin, left_y))
+        self._btn(util_l, (0, 0),          (bs, bs), "Map", "MAP", (0.2, 0.2, 0.2))
+        self._btn(util_l, (bs + gap, 0),   (bs, bs), "Run", "RUN", (0.4, 0.3, 0.1), repeat=True)
+
+        # --- TOP RIGHT (Menu Navigation) ---
+        # Shifted down by 1/3 of the button's Y height (bs / 3.0)
+        util_r_w = bs * 2 + gap
+        util_r_y = sh - margin - bs - (bs / 3.0)
+        util_r = bui.containerwidget(parent=self.root, background=False, size=(util_r_w, bs), position=(sw - margin - util_r_w, util_r_y))
+        self._btn(util_r, (0, 0),          (bs, bs), "Enter", "ENTER",  (0.2, 0.3, 0.5))
+        self._btn(util_r, (bs + gap, 0),   (bs, bs), "Esc",   "ESCAPE", (0.3, 0.3, 0.3))
 
     def _tick(self) -> None:
         if not self._lib or not self.root.exists():
@@ -565,9 +702,9 @@ class DoomAppMode(AppMode):
             return
 
         try:
-            t0 = datetime.datetime.now()
+            t0 = datetime.now()
             self._lib.doomgeneric_Tick()
-            tick_ms = (datetime.datetime.now() - t0).total_seconds() * 1000.0
+            tick_ms = (datetime.now() - t0).total_seconds() * 1000.0
 
             if not self._frame_ready.value: return
             self._frame_ready.value = 0
@@ -615,7 +752,7 @@ class DoomAppMode(AppMode):
 
     def _update_overlay(self) -> None:
         if not self._overlay_enabled or not self._ov_bars: return
-        now = datetime.datetime.now()
+        now = datetime.now()
         elapsed = (now - self._last_fps_sample).total_seconds()
         
         if elapsed >= 0.5:
@@ -653,6 +790,7 @@ class DoomAppMode(AppMode):
 class AppModeLoader(bui.Plugin): pass
 
 # ---------------------------------------------------------------------------
+
 _ASSET_SO = None
 _ASSET_WAD = None
 _ASSET_SOUNDS = None
