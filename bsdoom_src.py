@@ -65,23 +65,48 @@ class Const:
     WAD_NAME   = "DOOM1.WAD"
     DIR_PREFIX = ".bsdoom_"
 
-    # Expanded Key Map (Arrays to support multiple simultaneous keys like Alt+Left)
+    # Key map using correct doomkeys.h constants (all single keycodes)
     KEY_MAP = {
-        "UP":        [0xAD],  # Up Arrow
-        "DOWN":      [0xAF],  # Down Arrow
-        "TURN_L":    [0xAC],  # Left Arrow
-        "TURN_R":    [0xAE],  # Right Arrow
-        "STRAFE_L":  [184, 0xAC], # ALT (184) + LEFT (0xAC)
-        "STRAFE_R":  [184, 0xAE], # ALT (184) + RIGHT (0xAE)
-        "ENTER":     [13],    # Enter
-        "ESCAPE":    [27],    # Esc
-        "USE":       [32],    # Space
-        "FIRE":      [157, 29],   # Right Ctrl (157) & Left Ctrl (29)
-        "MAP":       [9],     # Tab
-        "RUN":       [182, 54],   # Right Shift (182) & Left Shift (54)
+        # Movement
+        "UP":        [0xAD],        # KEY_UPARROW
+        "DOWN":      [0xAF],        # KEY_DOWNARROW
+        "TURN_L":    [0xAC],        # KEY_LEFTARROW
+        "TURN_R":    [0xAE],        # KEY_RIGHTARROW
+        "STRAFE_L":  [0xA0],        # KEY_STRAFE_L
+        "STRAFE_R":  [0xA1],        # KEY_STRAFE_R
+        # Actions
+        "FIRE":      [0xA3],        # KEY_FIRE    (was wrong: 157/29 are evdev codes)
+        "USE":       [0xA2],        # KEY_USE
+        "RUN":       [0x80 + 0x36], # KEY_RSHIFT  (0xb6 = 182)
+        # Navigation
+        "ENTER":     [13],          # KEY_ENTER
+        "ESCAPE":    [27],          # KEY_ESCAPE
+        "MAP":       [9],           # KEY_TAB
+        # Weapon slots 1-7 (ASCII digits)
+        "WPN_1":     [ord('1')],
+        "WPN_2":     [ord('2')],
+        "WPN_3":     [ord('3')],
+        "WPN_4":     [ord('4')],
+        "WPN_5":     [ord('5')],
+        "WPN_6":     [ord('6')],
+        "WPN_7":     [ord('7')],
+        # Automap zoom
+        "ZOOM_IN":   [ord('+')],    # KEY_EQUALS / KEYP_PLUS
+        "ZOOM_OUT":  [ord('-')],    # KEY_MINUS  / KEYP_MINUS
+        # Pause
+        "PAUSE":     [0xFF],        # KEY_PAUSE
+        # F-keys (save/load/etc)
+        "F1":        [0x80 + 0x3b],
+        "F2":        [0x80 + 0x3c],
+        "F3":        [0x80 + 0x3d],
+        "F5":        [0x80 + 0x3f],
+        "F6":        [0x80 + 0x40],
+        "F7":        [0x80 + 0x41],
+        "F9":        [0x80 + 0x43],
+        "F10":       [0x80 + 0x44],
     }
 
-    BTN_RELEASE_DELAY = 0.35   # seconds before synthesising a key-release event
+    BTN_RELEASE_DELAY = 0.15   # seconds before synthesising a key-release event
     TICK_INTERVAL     = 0.028  # seconds between engine ticks (~35 Hz)
 
     OVERLAY_HISTORY = 60
@@ -196,9 +221,12 @@ class DoomAppMode(AppMode):
             empty_app_mode_handle_app_intent_default()
 
     def on_activate(self) -> None:
-        log("[AppMode] Activated."
+        log("[AppMode] Activated.")
         classic_app_mode_activate()
+
         set_internal_music(None)
+        for w in ('squad_button','menu_button'):
+            bui.get_special_widget(w).delete()
 
         self._lib            = None
         self._screenbuf      = None
@@ -253,10 +281,7 @@ class DoomAppMode(AppMode):
 
         bui.textwidget(parent=self.root, position=(sw / 2, sh - 80), size=(0, 0), text="DOOM", big=True, scale=3.2, color=Const.COLOR_RED, h_align="center", v_align="center", shadow=1.4, flatness=0.0)
         
-        # Diff adjustment applied here
         bui.textwidget(parent=self.root, position=(sw / 2, sh - 137), size=(0, 0), text="for Ballistica BombSquad", scale=0.72, color=Const.COLOR_DIM, h_align="center", v_align="center")
-
-        # Diff adjustment applied here
         bui.imagewidget(parent=self.root, position=(sw / 2 - 160, sh - 152), size=(320, 1), texture=tex_w, color=Const.COLOR_LIGHT, opacity=0.4)
 
         panel_w, panel_h = 360, 190
@@ -363,14 +388,12 @@ class DoomAppMode(AppMode):
 
         row_y -= gap
 
-        # Diff adjustments applied here
         def _scale_lbl(y): return bui.textwidget(parent=self._adv_container, position=(adv_w - 160, y + 17), size=(0, 0), text=self._opt_scale_mode.upper(), scale=0.58, color=Const.COLOR_ACCENT, h_align="center", v_align="center")
         def _scale_btn(y): return bui.buttonwidget(parent=self._adv_container, position=(adv_w - 110, y), size=(88, 34), label="Toggle", color=Const.COLOR_LIGHT, textcolor=Const.COLOR_TEXT, texture=tex_w, enable_sound=False, on_activate_call=self._toggle_scale_mode)
         self._scale_mode_lbl, _ = _row(row_y, "Scale mode", _scale_lbl, _scale_btn)
 
         row_y -= gap
 
-        # Diff adjustments applied here
         def _ov_lbl(y): return bui.textwidget(parent=self._adv_container, position=(adv_w - 160, y + 17), size=(0, 0), text="ON" if self._opt_show_overlays else "OFF", scale=0.58, color=Const.COLOR_GREEN if self._opt_show_overlays else Const.COLOR_DIM, h_align="center", v_align="center")
         def _ov_btn(y): return bui.buttonwidget(parent=self._adv_container, position=(adv_w - 110, y), size=(88, 34), label="Toggle", color=Const.COLOR_LIGHT, textcolor=Const.COLOR_TEXT, texture=tex_w, enable_sound=False, on_activate_call=self._toggle_overlays_opt)
         self._overlay_lbl, _ = _row(row_y, "Live overlays  (FPS, tick ms, bar graph)", _ov_lbl, _ov_btn)
@@ -438,26 +461,20 @@ class DoomAppMode(AppMode):
         tex_w = bui.gettexture("white")
         self._load_root = bui.containerwidget(parent=self.root, size=(sw, sh), background=False)
         
-        # Dim background covering entire screen
         bui.imagewidget(parent=self._load_root, position=(0, 0), size=(sw, sh), texture=tex_w, color=(0, 0, 0), opacity=0.45)
         
         panel_w, panel_h = 440, 170
         px, py = sw / 2 - panel_w / 2, sh / 2 - panel_h / 2
         
-        # Box background
         bui.imagewidget(parent=self._load_root, position=(px, py), size=(panel_w, panel_h), texture=tex_w, color=Const.COLOR_MID, opacity=0.95)
         bui.imagewidget(parent=self._load_root, position=(px, py + panel_h - 4), size=(panel_w, 4), texture=tex_w, color=Const.COLOR_ACCENT)
         
-        # Texts
         bui.textwidget(parent=self._load_root, position=(px + panel_w / 2, py + panel_h - 35), size=(0, 0), text="EXTRACTING ASSETS", scale=0.7, color=Const.COLOR_ACCENT, h_align="center", v_align="center")
         self._load_log = bui.textwidget(parent=self._load_root, position=(px + panel_w / 2, py + 80), size=(0, 0), text="Preparing...", scale=0.55, color=Const.COLOR_TEXT, h_align="center", v_align="center")
         
-        # Progress Bar base
         bar_w, bar_h = 380, 14
         bx, by = px + (panel_w - bar_w) / 2, py + 35
         bui.imagewidget(parent=self._load_root, position=(bx, by), size=(bar_w, bar_h), texture=tex_w, color=Const.COLOR_DARK)
-        
-        # Progress bar fill
         self._load_bar = bui.imagewidget(parent=self._load_root, position=(bx, by), size=(0, bar_h), texture=tex_w, color=Const.COLOR_GREEN)
         self._load_bar_w = bar_w
 
@@ -582,11 +599,11 @@ class DoomAppMode(AppMode):
             lib.doomgeneric_Tick.argtypes  = []
             lib.doomgeneric_Tick.restype   = None
             
-            # Using strict integers ensures safe cross-platform calling convention for ARM64
-            lib.bs_add_key.argtypes        = [ctypes.c_int, ctypes.c_int]
+            # FIX: first arg is unsigned char in C, must use c_ubyte — not c_int
+            # Using c_int caused keycode corruption for values >= 128 (FIRE=0xa3, etc.)
+            lib.bs_add_key.argtypes        = [ctypes.c_ubyte, ctypes.c_int]
             lib.bs_add_key.restype         = None
 
-            # Setup the python sound callback struct
             SOUND_CB_TYPE = ctypes.CFUNCTYPE(None, ctypes.c_char_p)
             self._c_snd_cb = SOUND_CB_TYPE(self._on_sound)
             lib.bs_set_sound_callback.argtypes = [SOUND_CB_TYPE]
@@ -596,11 +613,8 @@ class DoomAppMode(AppMode):
             self._frame_ready = ctypes.c_int.in_dll(lib, "bs_frame_ready")
             self._lib = lib
 
-            # Ensure we chdir to the exact extraction folder so DOOM writes logs/cfgs there safely
             extract_dir = os.path.dirname(wad_path)
             
-            # Since we chdir, DOOM only needs the local WAD filename, avoiding path resolution crashes!
-            # Use ctypes string buffers so C code modifying strings doesn't cause a SegFault
             args = [b"doom", b"-iwad", Const.WAD_NAME.encode()]
             self._c_args_buffers = [ctypes.create_string_buffer(a) for a in args]
             argc = len(self._c_args_buffers)
@@ -642,59 +656,109 @@ class DoomAppMode(AppMode):
         for dk in doom_keys:
             self._lib.bs_add_key(dk, state)
 
-    def _btn(self, parent, pos: tuple, size: tuple, label: str, key: str, color: tuple = (0.25, 0.25, 0.25), repeat: bool = False) -> None:
+    def _btn(self, parent, pos: tuple, size: tuple, label: str, key: str,
+             color: tuple = (0.25, 0.25, 0.25), repeat: bool = False) -> None:
         def _tap():
             self._on_input(key, "press")
-            if key in self._release_timers and self._release_timers[key] is not None:
-                self._release_timers[key] = None  # Safely cancel previous timer
-            
-            def _release(): 
+            def _release():
                 self._on_input(key, "release")
-                self._release_timers[key] = None
-                
+                self._release_timers.pop(key, None)
             self._release_timers[key] = bui.AppTimer(Const.BTN_RELEASE_DELAY, _release)
 
-        bui.buttonwidget(parent=parent, position=pos, size=size, label=label, color=color, textcolor=(1, 1, 1), texture=bui.gettexture("white"), enable_sound=False, repeat=repeat, on_activate_call=_tap)
+        bui.buttonwidget(parent=parent, position=pos, size=size, label=label,
+                         color=color, textcolor=(1, 1, 1),
+                         texture=bui.gettexture("white"),
+                         enable_sound=False, repeat=repeat,
+                         on_activate_call=_tap)
 
     def _build_buttons(self, sw: float, sh: float) -> None:
-        bs, gap, margin = 70, 8, 24
-        
-        col_move = (0.15, 0.25, 0.35)  # Blue tint for movement
-        col_aim  = (0.35, 0.20, 0.15)  # Red tint for aiming
+        """
+        Layout:
+          TOP-LEFT:      [Map] [Run] [Pause]  (horizontal)
+          LEFT side:     D-pad + USE  (bottom-left)
+          RIGHT side:    Aim pad + FIRE  (bottom-right, unchanged)
+          FAR-RIGHT col: F-keys + Esc  (vertical, top-to-bottom, top btn lowered by bs/2)
+          RIGHT-MID col: Weapons 1-7 + Enter  (vertical, just left of f-key col)
+        """
+        tex_w  = bui.gettexture("white")
+        bs     = 68    # base button size
+        gap    = 8
+        margin = 20
 
-        # --- LEFT STICK (Movement & Strafe) ---
-        dpad_w = bs * 3 + gap * 2
-        dpad = bui.containerwidget(parent=self.root, background=False, size=(dpad_w, dpad_w), position=(margin, margin))
-        self._btn(dpad, (bs + gap, (bs + gap) * 2), (bs, bs), "Fwd",   "UP",       col_move, repeat=True)
-        self._btn(dpad, (bs + gap, 0),              (bs, bs), "Back",  "DOWN",     col_move, repeat=True)
-        self._btn(dpad, (0,        bs + gap),       (bs, bs), "< Str", "STRAFE_L", col_move, repeat=True)
-        self._btn(dpad, ((bs+gap)*2, bs + gap),     (bs, bs), "Str >", "STRAFE_R", col_move, repeat=True)
+        # ── colour palette ──────────────────────────────────────────────────
+        col_move   = (0.10, 0.22, 0.38)
+        col_aim    = (0.38, 0.12, 0.10)
+        col_fire   = (0.75, 0.08, 0.08)
+        col_use    = (0.10, 0.45, 0.18)
+        col_run    = (0.40, 0.28, 0.06)
+        col_util   = (0.18, 0.18, 0.22)
+        col_wpn    = (0.22, 0.18, 0.28)
+        col_map    = (0.14, 0.14, 0.14)
+        col_esc    = (0.28, 0.10, 0.10)
+        col_pause  = (0.20, 0.20, 0.14)
+        col_enter  = (0.10, 0.38, 0.18)
 
-        # --- RIGHT STICK (Aiming & Actions) ---
-        rpad_x = sw - margin - dpad_w
-        rpad = bui.containerwidget(parent=self.root, background=False, size=(dpad_w, dpad_w), position=(rpad_x, margin))
-        self._btn(rpad, (bs + gap, (bs + gap) * 2), (bs, bs), "Use",   "USE",    (0.10, 0.50, 0.20), repeat=False)
-        self._btn(rpad, (bs + gap, 0),              (bs, bs), "FIRE",  "FIRE",   (0.70, 0.10, 0.10), repeat=True)
-        self._btn(rpad, (0,        bs + gap),       (bs, bs), "< Aim", "TURN_L", col_aim, repeat=True)
-        self._btn(rpad, ((bs+gap)*2, bs + gap),     (bs, bs), "Aim >", "TURN_R", col_aim, repeat=True)
+        # ── TOP-LEFT: Map / Run / Pause ─────────────────────────────────────
+        top_y = sh - margin - bs
+        tl = bui.containerwidget(parent=self.root, background=False,
+                                  size=(bs * 3 + gap * 2, bs),
+                                  position=(margin, top_y))
+        self._btn(tl, (0,          0), (bs, bs), "Map", "MAP",   col_map)
+        self._btn(tl, (bs + gap,   0), (bs, bs), "Run", "RUN",   col_run, repeat=True)
+        self._btn(tl, ((bs+gap)*2, 0), (bs, bs), "||",  "PAUSE", col_pause)
 
-        # --- TOP LEFT (Map & Run) ---
-        left_y = sh - margin - bs
-        if self._overlay_enabled:
-            # Diagnostics overlay is at Y = sh - 178, so we bump the Run button down completely underneath it
-            left_y = sh - 178 - bs - 10
+        # ── BOTTOM-LEFT: Movement D-pad (unchanged) ─────────────────────────
+        dpad_size = bs * 3 + gap * 2
+        dpad = bui.containerwidget(parent=self.root, background=False,
+                                    size=(dpad_size, dpad_size),
+                                    position=(margin, margin))
+        self._btn(dpad, (bs + gap,   (bs+gap)*2), (bs, bs), "Fwd",  "UP",       col_move, repeat=True)
+        self._btn(dpad, (bs + gap,   0),           (bs, bs), "Back", "DOWN",     col_move, repeat=True)
+        self._btn(dpad, (0,          bs + gap),    (bs, bs), "<St",  "STRAFE_L", col_move, repeat=True)
+        self._btn(dpad, ((bs+gap)*2, bs + gap),    (bs, bs), "St>",  "STRAFE_R", col_move, repeat=True)
+        self._btn(dpad, (bs + gap,   bs + gap),    (bs, bs), "USE",  "USE",      col_use)
 
-        util_l = bui.containerwidget(parent=self.root, background=False, size=(bs * 2 + gap, bs), position=(margin, left_y))
-        self._btn(util_l, (0, 0),          (bs, bs), "Map", "MAP", (0.2, 0.2, 0.2))
-        self._btn(util_l, (bs + gap, 0),   (bs, bs), "Run", "RUN", (0.4, 0.3, 0.1), repeat=True)
+        # ── BOTTOM-RIGHT: Aim pad + Fire (unchanged) ────────────────────────
+        fire_w = bs * 2 + gap
+        # Push aim pad left to make room for the two right-side vertical columns
+        wsz  = 52   # weapon button size
+        wgap = 6
+        col_w = wsz + gap          # width of one vertical column
+        aim_x = sw - margin - fire_w - col_w * 2 - gap * 2
+        aim_pad = bui.containerwidget(parent=self.root, background=False,
+                                       size=(fire_w, bs * 2 + gap + 10),
+                                       position=(aim_x, margin))
+        self._btn(aim_pad, (0,        bs + gap + 10), (bs, bs), "<Aim", "TURN_L", col_aim, repeat=True)
+        self._btn(aim_pad, (bs + gap, bs + gap + 10), (bs, bs), "Aim>", "TURN_R", col_aim, repeat=True)
+        self._btn(aim_pad, (0,        0),              (fire_w, bs), "FIRE", "FIRE", col_fire, repeat=True)
 
-        # --- TOP RIGHT (Menu Navigation) ---
-        # Shifted down by 1/3 of the button's Y height (bs / 3.0)
-        util_r_w = bs * 2 + gap
-        util_r_y = sh - margin - bs - (bs / 3.0)
-        util_r = bui.containerwidget(parent=self.root, background=False, size=(util_r_w, bs), position=(sw - margin - util_r_w, util_r_y))
-        self._btn(util_r, (0, 0),          (bs, bs), "Enter", "ENTER",  (0.2, 0.3, 0.5))
-        self._btn(util_r, (bs + gap, 0),   (bs, bs), "Esc",   "ESCAPE", (0.3, 0.3, 0.3))
+        # ── RIGHT-MID vertical column: Weapons 1-7 + Enter ──────────────────
+        # Positioned just left of the f-key column.
+        # Starts from top (sh - margin - bs/2) going downward.
+        wkeys = ["WPN_1","WPN_2","WPN_3","WPN_4","WPN_5","WPN_6","WPN_7"]
+        wlbls = ["1 Fist","2 Pist","3 Shot","4 Chn","5 Rok","6 Plas","7 BFG"]
+        wcol_x = sw - margin - col_w * 2 - gap
+
+        # Top of column lowered by bs/2 from the very top margin
+        wcol_top = sh - margin - bs // 2
+        for i, (wk, wl) in enumerate(zip(wkeys, wlbls)):
+            y = wcol_top - i * (wsz + wgap)
+            self._btn(self.root, (wcol_x, y), (wsz, wsz), wl, wk, col_wpn)
+
+        # Enter below weapons
+        enter_y = wcol_top - len(wkeys) * (wsz + wgap) - gap
+        self._btn(self.root, (wcol_x, enter_y), (wsz, wsz + 10), "ENTER", "ENTER", col_enter)
+
+        # ── FAR-RIGHT vertical column: F-keys + Esc ─────────────────────────
+        # [Help(F1)] [Save(F2)] [Load(F3)] [Gamma(F5)] [Esc]
+        # Top button lowered by bs/2 from screen top.
+        f_labels = [("Help","F1"),("Save","F2"),("Load","F3"),("Gamma","F5"),("Esc","ESCAPE")]
+        fcol_x = sw - margin - col_w + gap // 2
+        fcol_top = sh - margin - bs // 2
+        for i, (lbl, key) in enumerate(f_labels):
+            y = fcol_top - i * (wsz + wgap)
+            c = col_esc if key == "ESCAPE" else col_util
+            self._btn(self.root, (fcol_x, y), (wsz, wsz), lbl, key, c)
 
     def _tick(self) -> None:
         if not self._lib or not self.root.exists():
