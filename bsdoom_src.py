@@ -92,29 +92,74 @@ def _sweep_stale_dirs(parent: str) -> None:
         pass
 
 
+def _locate_on_disk() -> tuple[str, str] | None:
+    """
+    Search for libdoomgeneric.so and a WAD file on disk, relative to the
+    app Python directory.  Returns (so_path, wad_path) if both are found,
+    or None otherwise.
+    """
+    try:
+        app_py = os.path.abspath(bui.app.env.python_directory_app)
+        base   = os.path.abspath(os.path.join(app_py, os.pardir))
+    except Exception:
+        base = os.path.abspath(babase.app.env.python_directory_user)
+
+    so_path = os.path.join(base, Const.SO_NAME)
+    if not os.path.exists(so_path):
+        return None
+
+    for name in ("DOOM1.WAD", "doom1.wad", "DOOM.WAD", "doom.wad"):
+        wad_path = os.path.join(base, name)
+        if os.path.exists(wad_path):
+            return os.path.abspath(so_path), os.path.abspath(wad_path)
+
+    return None
+
+
 def _extract_assets() -> tuple[str, str]:
     """
-    Decode the embedded base-85 blobs and write them to a fresh temporary
-    directory.  Registers an atexit handler so the directory is removed on
-    clean exit.  Returns (so_path, wad_path) as absolute paths.
+    Resolve the shared library and WAD paths using one of two strategies:
+
+    1. Embedded blobs: if _ASSET_SO and _ASSET_WAD are populated (i.e. the
+       file was produced by pack_bsdoom.py), decode them into a fresh
+       temporary directory and return those paths.
+
+    2. Disk fallback: if the asset variables are None (unpacked source),
+       search for the files on disk relative to the app directory, mirroring
+       the original _locate_files() behaviour.
     """
-    parent = _get_extract_parent()
-    _sweep_stale_dirs(parent)
+    if _ASSET_SO is not None and _ASSET_WAD is not None:
+        log("[Assets] Embedded blobs found, extracting...")
+        parent = _get_extract_parent()
+        _sweep_stale_dirs(parent)
 
-    extract_dir = os.path.join(parent, f"{Const.DIR_PREFIX}{uuid.uuid4().hex}")
-    os.makedirs(extract_dir, exist_ok=True)
-    atexit.register(shutil.rmtree, extract_dir, True)
+        extract_dir = os.path.join(parent, f"{Const.DIR_PREFIX}{uuid.uuid4().hex}")
+        os.makedirs(extract_dir, exist_ok=True)
+        atexit.register(shutil.rmtree, extract_dir, True)
 
-    so_path  = os.path.join(extract_dir, Const.SO_NAME)
-    wad_path = os.path.join(extract_dir, Const.WAD_NAME)
+        so_path  = os.path.join(extract_dir, Const.SO_NAME)
+        wad_path = os.path.join(extract_dir, Const.WAD_NAME)
 
-    with open(so_path, "wb") as fh:
-        fh.write(base64.b85decode(_ASSET_SO))
-    with open(wad_path, "wb") as fh:
-        fh.write(base64.b85decode(_ASSET_WAD))
+        with open(so_path, "wb") as fh:
+            fh.write(base64.b85decode(_ASSET_SO))
+        with open(wad_path, "wb") as fh:
+            fh.write(base64.b85decode(_ASSET_WAD))
 
-    os.chmod(so_path, 0o755)
-    log(f"[Assets] Extracted to {extract_dir}")
+        os.chmod(so_path, 0o755)
+        log(f"[Assets] Extracted to {extract_dir}")
+        return so_path, wad_path
+
+    log("[Assets] No embedded blobs, falling back to disk search...")
+    result = _locate_on_disk()
+    if result is None:
+        raise FileNotFoundError(
+            f"Could not find {Const.SO_NAME} and a WAD file on disk, "
+            "and no embedded assets are present. "
+            "Either run pack_bsdoom.py or place the files next to the app."
+        )
+    so_path, wad_path = result
+    log(f"[Assets] Found on disk: {so_path}")
+    log(f"[Assets] Found on disk: {wad_path}")
     return so_path, wad_path
 
 
@@ -219,6 +264,10 @@ class DoomAppMode(AppMode):
     def _start_engine(self) -> bool:
         try:
             so_path, wad_path = _extract_assets()
+        except FileNotFoundError as e:
+            log(f"[Engine] Assets not found: {e}")
+            bui.screenmessage("BSDoom: Missing .so or WAD. See bsdoom.log.", color=(1, 0, 0))
+            return False
         except Exception:
             log(f"[Engine] Asset extraction failed:\n{traceback.format_exc()}")
             bui.screenmessage("BSDoom: Asset extraction failed.", color=(1, 0, 0))

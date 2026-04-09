@@ -265,8 +265,15 @@ void I_UpdateSoundParams(int channel, int vol, int sep)
     }
 }
 
+extern void (*bs_sound_cb)(const char* name);
+
 int I_StartSound(sfxinfo_t *sfxinfo, int channel, int vol, int sep)
 {
+    /* Intercept and pass the sound name to Python! */
+    if (bs_sound_cb != NULL && sfxinfo != NULL) {
+        bs_sound_cb(sfxinfo->name);
+    }
+
     if (sound_module != NULL)
     {
         CheckVolumeSeparation(&vol, &sep);

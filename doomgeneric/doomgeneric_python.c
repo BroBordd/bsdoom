@@ -111,3 +111,13 @@ void DG_SetWindowTitle(const char *title)
     fprintf(stderr, "[dg] window title: %s\n", title);
     fflush(stderr);
 }
+
+/* ── sound callback ──────────────────────────────────────────────────────── */
+
+typedef void (*SoundCallback)(const char* name);
+SoundCallback bs_sound_cb = NULL;
+
+void bs_set_sound_callback(SoundCallback cb)
+{
+    bs_sound_cb = cb;
+}
