@@ -5,6 +5,7 @@ bsdoom.py
 *.so
 *.WAD
 *.wad
+*.zip
 
 # Extraction temp directories created by the plugin at runtime
 .bsdoom_*/
