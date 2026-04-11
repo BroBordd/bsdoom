@@ -4,7 +4,7 @@ DOOM running inside [Ballistica](https://github.com/efroemling/ballistica) (Bomb
 
 Yeah, it actually works.
 
-![BSDoom running in BombSquad](https://github.com/user-attachments/assets/3ebe5ba1-bfe3-4ddc-b271-30131211d231)
+![BSDoom running in BombSquad](https://github.com/user-attachments/assets/b22aaffb-bc44-4523-b4af-36a9a469ee25)
 
 ---
 
