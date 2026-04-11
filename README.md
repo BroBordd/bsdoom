@@ -1,48 +1,53 @@
 # BSDoom
 
-Run DOOM inside [Ballistica](https://github.com/efroemling/ballistica) (BombSquad) natively using Python `ctypes`, utilizing a dynamic grid of UI widgets as a custom framebuffer, complete with native audio mapping!
+DOOM running inside [Ballistica](https://github.com/efroemling/ballistica) (BombSquad). The engine is loaded as a native `.so` via Python `ctypes`, and the framebuffer gets blasted out to a grid of `imagewidget` objects. Sound hooks fire C callbacks straight into BombSquad's native audio mixer.
+
+Yeah, it actually works.
+
+![BSDoom running in BombSquad](https://github.com/user-attachments/assets/3ebe5ba1-bfe3-4ddc-b271-30131211d231)
 
 ---
 
-## Repository Layout
+## Repo Layout
 
-```text
+```
 bsdoom/
-├── bsdoom_src.py      # Core Ballistica plugin (gets packed into bsdoom.py)
-├── pack_bsdoom.py     # Base85 encodes the .so, WAD, and ZIP into the final script
-├── make_sounds.py     # Extracts DMX audio from DOOM, converts to OGG via FFmpeg
-├── setup_repo.sh      # Copies doomgeneric source and strips unused files
-└── doomgeneric/       # DOOM engine C source tree (added by setup_repo.sh)
+├── bsdoom_src.py      # main plugin source (gets packed into bsdoom.py)
+├── pack_bsdoom.py     # base85-encodes the .so, WAD, and sounds zip into the final script
+├── make_sounds.py     # rips DMX audio from the WAD, converts to .ogg via FFmpeg
+├── setup_repo.sh      # pulls in doomgeneric source and strips platform junk
+└── doomgeneric/       # DOOM engine C source (populated by setup_repo.sh)
 ```
 
 ---
 
-## Build Instructions
+## Build
 
-### Prerequisites
-Before building, ensure you have the following installed:
-* **GNU Make** (3.81 or later)
-* **FFmpeg** (For converting DOOM's audio to `.ogg`)
-* **Android NDK** (r25c or later, if compiling for Android)
+### What you need
+- **GNU Make** 3.81+
+- **FFmpeg** (for audio conversion)
+- **Android NDK** r25c+ (only if you're cross-compiling for Android)
 
-### Step 1: Add the DOOM C-Source
-Clone the upstream `doomgeneric` repository next to this repo, then run the setup script to copy the necessary files and strip away unused platform code:
+### 1. Get the DOOM source
+
+Clone `doomgeneric` next to this repo, then run the setup script to copy over what we need:
 
 ```bash
 git clone https://github.com/ozkl/doomgeneric ../doomgeneric
 bash setup_repo.sh
 ```
 
-### Step 2: Build `libdoomgeneric.so`
-You must compile the engine into a shared library so our Python plugin can hook into it.
+### 2. Build the shared library
 
-**For Native Linux (Desktop Testing):**
+The engine has to be compiled as a `.so` so the Python plugin can `ctypes` into it.
+
+**Linux (for local testing):**
 ```bash
 cd doomgeneric
 make -f Makefile.python
 ```
 
-**For Android Cross-Compile (arm64-v8a):**
+**Android cross-compile (arm64-v8a):**
 ```bash
 export NDK=/path/to/android-ndk-r25c
 export TOOLCHAIN=$NDK/toolchains/llvm/prebuilt/linux-x86_64
@@ -59,61 +64,103 @@ make -f Makefile.python \
     AR="$AR" \
     EXTRA_CFLAGS="--target=$TARGET$API -fPIC"
 
-# Strip debug symbols to reduce file size
 $STRIP --strip-unneeded libdoomgeneric.so
 ```
 
-### Step 3: Obtain an IWAD (Game Data)
-You need a DOOM Game file (`.WAD`) to play. If you own DOOM on Steam or GOG, you can just grab `DOOM.WAD` or `DOOM2.WAD` from your install folder.
+### 3. Get a WAD
 
-Alternatively, you can instantly download the **Shareware DOOM Episode** directly to the repo folder:
+You need an IWAD. If you own DOOM on Steam or GOG, just grab `DOOM.WAD` or `DOOM2.WAD` from the install directory.
+
+Or grab the shareware episode right now:
 ```bash
 wget https://distro.ibiblio.org/pub/linux/distributions/slitaz/sources/packages/d/doom1.wad -O DOOM1.WAD
 ```
 
-### Step 4: Convert Audio Assets
-DOOM uses an ancient audio format called `DMX`. Ballistica requires standard `.ogg` files. 
-Run the provided sound extractor script to rip the audio out of the WAD, strip the headers, and convert them to OGG using FFmpeg. 
-*(Ensure your WAD file is named `DOOM1.WAD` and sits next to the python script).*
+### 4. Convert the audio
+
+DOOM's sound format (DMX) is ancient and Ballistica only knows `.ogg`, so we have to convert. Put your WAD next to `make_sounds.py` and run:
 
 ```bash
 python3 make_sounds.py
 ```
-*This will generate a `sounds.zip` file containing all the converted game audio.*
 
-### Step 5: Pack the Final Plugin
-You now have the three required binaries: `libdoomgeneric.so`, `DOOM1.WAD`, and `sounds.zip`. 
-Use the pack script to encode them as text directly into the bottom of the Python plugin. 
+This spits out a `sounds.zip` with all the game audio converted and ready to go.
+
+### 5. Pack everything into one file
+
+Now you've got the three pieces: `libdoomgeneric.so`, `DOOM1.WAD`, `sounds.zip`. The pack script encodes them all directly into the bottom of the plugin:
 
 ```bash
 python3 pack_bsdoom.py libdoomgeneric.so DOOM1.WAD sounds.zip bsdoom_src.py bsdoom.py
 ```
 
-The output file **`bsdoom.py`** is now fully self-contained! 
-Drop it into your Ballistica/BombSquad `mods` folder. When you activate the plugin in-game, it will unpack the binaries, inject the audio, and boot the engine automatically.
+The output `bsdoom.py` is fully self-contained. Drop it into your Ballistica `mods` folder, activate the plugin in-game, and it'll unpack itself, inject the audio, and boot the engine.
 
 ---
 
-## How It Works
+## How it works
 
-1. **Extraction:** On activation, `DoomAppMode` decodes the embedded blobs. The C library and WAD go to a secure temp folder, while the `sounds.zip` extracts directly into Ballistica's native `ba_data/audio` directory.
-2. **Execution:** Python utilizes `ctypes` to load the `.so` and run `doomgeneric_Create()`.
-3. **The Display:** A background `AppTimer` ticks the engine at 35Hz. Python reads the RGBA byte-array outputted by the DOOM engine (`DG_ScreenBuffer`) and maps the colors mathematically to a grid of Ballistica `imagewidget` objects.
-4. **Native Sound Hook:** When a sound triggers in DOOM (like a shotgun blast), our modified C-code fires a callback pointer back to Python. Python translates the sound name and triggers `bui.getsound().play()`, rendering DOOM audio flawlessly through BombSquad's native sound mixer!
+1. **Startup** — `DoomAppMode` decodes the embedded blobs on activation. The `.so` and WAD go to a temp folder, the sounds extract into `ba_data/audio`.
+2. **Engine** — `ctypes` loads the library and calls `doomgeneric_Create()`. A background `AppTimer` ticks the engine at ~35Hz.
+3. **Rendering** — Each tick, the engine writes to `DG_ScreenBuffer` (a raw RGBA array). Python reads that buffer and maps the pixel colors onto a grid of `imagewidget` objects. Grid resolution is configurable from the launch menu.
+4. **Audio** — Modified C code fires a callback pointer to Python whenever DOOM plays a sound. Python looks up the sound name and calls `bui.getsound().play()` — so you get real BombSquad audio, no hacks.
 
 ---
 
 ## Controls
+
+### Movement
 | Button | Action |
 |--------|--------|
-| **D-Pad** | Move & Turn |
-| **Fire** | Primary Attack |
-| **Use** | Open Doors / Switches |
-| **Enter** | Confirm Menus |
-| **Esc** | Toggle DOOM Main Menu |
+| **Fwd / Back** | Walk forward / backward |
+| **<St / St>** | Strafe left / right |
+| **<Aim / Aim>** | Turn left / right |
+
+### Actions
+| Button | Action |
+|--------|--------|
+| **USE** | Open doors / activate switches |
+| **FIRE** | Shoot |
+| **Run** | Hold to run |
+
+### Weapons
+| Button | Weapon |
+|--------|--------|
+| **1 Fist** | Fist / Chainsaw |
+| **2 Pist** | Pistol |
+| **3 Shot** | Shotgun |
+| **4 Chn** | Chaingun |
+| **5 Rok** | Rocket Launcher |
+| **6 Plas** | Plasma Rifle |
+| **7 BFG** | BFG 9000 |
+
+### System
+| Button | Action |
+|--------|--------|
+| **Map** | Toggle automap |
+| **+  /  -** | Zoom automap in / out |
+| **ENTER** | Confirm menus |
+| **Esc** | DOOM main menu |
+| **\|\|** | Pause |
+| **Help (F1)** | Help screen |
+| **Save (F2)** | Save game |
+| **Load (F3)** | Load game |
+| **Gamma (F5)** | Cycle gamma correction |
+
+---
+
+## Launch Options
+
+The launch menu (shown before the engine boots) lets you configure a few things:
+
+- **Grid Width** — how many cells wide the framebuffer is. Height is calculated automatically to keep the 16:10 aspect ratio. Presets for 32×20, 64×40, and 128×80 are included. Higher = sharper but heavier.
+- **Advanced Options:**
+  - **Engine tick rate** — defaults to 35Hz, you can bump it up or slow it down
+  - **Scale mode** — toggle between fit and fill
+  - **Live overlays** — enables an FPS counter, tick time stats, and a bar graph in the corner. Useful for tuning grid resolution.
 
 ---
 
 ## License
-The `bsdoom` plugin code is released under the MIT License. 
-The `doomgeneric` library, DOOM engine source, and generated WAD data are subject to their own respective licenses (GPL / ZeniMax Media).
+
+The `bsdoom` plugin code is MIT licensed. The `doomgeneric` library and DOOM engine source are GPL. WAD data belongs to ZeniMax — you'll need your own copy of the game files, or use the shareware WAD.
