@@ -158,6 +158,7 @@ The launch menu (shown before the engine boots) lets you configure a few things:
   - **Engine tick rate** — defaults to 35Hz, you can bump it up or slow it down
   - **Scale mode** — toggle between fit and fill
   - **Live overlays** — enables an FPS counter, tick time stats, and a bar graph in the corner. Useful for tuning grid resolution.
+
 ![Engine Options Menu](https://github.com/user-attachments/assets/3fa1afde-0e4e-429d-9a02-808ad35b4fdf)
 ---
 
